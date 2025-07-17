@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: globeco-execution-service-kafka
+  namespace: globeco
+  labels:
+    app: globeco-execution-service-kafka
+spec:
+  serviceName: globeco-execution-service-kafka-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: globeco-execution-service-kafka
+  template:
+    metadata:
+      labels:
+        app: globeco-execution-service-kafka
+    spec:
+      initContainers:
+        - name: kafka-init
+          image: apache/kafka:4.0.0
+          command:
+            - /bin/bash
+            - -c
+            - |
+              # Format the log directory for KRaft mode
+              /opt/kafka/bin/kafka-storage.sh format \
+                --config /opt/kafka/config/server.properties \
+                --cluster-id $(cat /proc/sys/kernel/random/uuid | tr -d '-' | head -c 22)
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+            - name: kafka-config
+              mountPath: /opt/kafka/config/server.properties
+              subPath: server.properties
+      containers:
+        - name: kafka
+          image: apache/kafka:4.0.0
+          ports:
+            - containerPort: 9092
+              name: kafka
+            - containerPort: 9093
+              name: controller
+          env:
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xmx1G -Xms1G"
+            - name: KAFKA_JVM_PERFORMANCE_OPTS
+              value: "-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+            - name: kafka-config
+              mountPath: /opt/kafka/config/server.properties
+              subPath: server.properties
+          command:
+            - /opt/kafka/bin/kafka-server-start.sh
+            - /opt/kafka/config/server.properties
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+      volumes:
+        - name: kafka-config
+          configMap:
+            name: globeco-execution-service-kafka-config
+        - name: kafka-data
+          persistentVolumeClaim:
+            claimName: kafka-data-globeco-execution-service-kafka-0
