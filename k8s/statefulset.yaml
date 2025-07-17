@@ -48,6 +48,19 @@ spec:
               # Create data directory
               mkdir -p /opt/kafka/data
               
+              # Clean up filesystem artifacts that Kafka doesn't allow
+              echo "Cleaning up filesystem artifacts..."
+              if [ -d /opt/kafka/data/lost+found ]; then
+                echo "Removing lost+found directory..."
+                rm -rf /opt/kafka/data/lost+found
+              fi
+              
+              # Remove any other non-Kafka directories/files that might cause issues
+              find /opt/kafka/data -maxdepth 1 -type d -name "lost+found" -exec rm -rf {} + 2>/dev/null || true
+              
+              echo "Data directory contents after cleanup:"
+              ls -la /opt/kafka/data/
+              
               # Check if already formatted
               if [ ! -f /opt/kafka/data/meta.properties ]; then
                 echo "Formatting Kafka storage for KRaft mode..."
