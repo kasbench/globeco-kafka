@@ -14,12 +14,19 @@ spec:
   volumeClaimTemplates:
     - metadata:
         name: kafka-data
+        labels:
+          app: execution-service-kafka
+          type: local
       spec:
         accessModes: ["ReadWriteOnce"]
         storageClassName: local-storage
         resources:
           requests:
             storage: 10Gi
+        selector:
+          matchLabels:
+            app: execution-service-kafka
+            type: local
   template:
     metadata:
       labels:
