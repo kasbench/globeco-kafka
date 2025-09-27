@@ -5,6 +5,7 @@ This module quickly reinitializes Kafka to ensure each test starts from the same
 """
 
 import time
+import subprocess
 from typing import Optional
 import kr8s
 from kr8s.objects import StatefulSet, PersistentVolumeClaim, Pod
@@ -85,9 +86,92 @@ class KafkaReinitializer:
         print(f"[ERROR] Timeout waiting for pvc/{self.pvc_name} to be bound")
         return False
     
+    def clean_node_directory(self, node_name: str = "node-3") -> bool:
+        """Clean the Kafka data directory on the node using a privileged cleanup pod"""
+        print(f"[INFO] Cleaning Kafka data directory on {node_name}...")
+        
+        cleanup_pod_yaml = f"""
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kafka-cleanup-temp
+  namespace: {self.namespace}
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/hostname: {node_name}
+  hostPID: true
+  hostNetwork: true
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
+  containers:
+  - name: cleanup
+    image: busybox
+    securityContext:
+      privileged: true
+      runAsUser: 0
+    command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Cleaning Kafka data directory..."
+      cd /mnt/disk1/kafka-execution-service
+      rm -rf * .[!.]* 2>/dev/null || true
+      echo "Directory cleaned"
+      chown -R 1000:1000 /mnt/disk1/kafka-execution-service
+      echo "Permissions set"
+    volumeMounts:
+    - name: kafka-data
+      mountPath: /mnt/disk1/kafka-execution-service
+  volumes:
+  - name: kafka-data
+    hostPath:
+      path: /mnt/disk1/kafka-execution-service
+      type: Directory
+"""
+        
+        try:
+            # Create cleanup pod
+            with open('/tmp/kafka-cleanup.yaml', 'w') as f:
+                f.write(cleanup_pod_yaml)
+            
+            result = subprocess.run(['kubectl', 'apply', '-f', '/tmp/kafka-cleanup.yaml'], 
+                                  capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                print(f"[ERROR] Failed to create cleanup pod: {result.stderr}")
+                return False
+            
+            # Wait for pod to complete
+            print("[INFO] Waiting for cleanup to complete...")
+            count = 0
+            while count < 60:
+                result = subprocess.run(['kubectl', 'get', 'pod', 'kafka-cleanup-temp', 
+                                       '-n', self.namespace, '-o', 'jsonpath={.status.phase}'], 
+                                      capture_output=True, text=True)
+                if result.stdout.strip() == 'Succeeded':
+                    print("[SUCCESS] Cleanup completed")
+                    break
+                elif result.stdout.strip() == 'Failed':
+                    print("[ERROR] Cleanup pod failed")
+                    return False
+                time.sleep(1)
+                count += 1
+            
+            # Clean up the cleanup pod
+            subprocess.run(['kubectl', 'delete', 'pod', 'kafka-cleanup-temp', '-n', self.namespace], 
+                          capture_output=True)
+            
+            return True
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to clean node directory: {e}")
+            return False
+
     def reinitialize(self) -> bool:
         """
-        Reinitialize Kafka by scaling StatefulSet to 0, deleting PVC, and scaling back up
+        Reinitialize Kafka by scaling StatefulSet to 0, cleaning data, deleting PVC/PV, and scaling back up
         
         Returns:
             bool: True if successful, False otherwise
@@ -109,8 +193,8 @@ class KafkaReinitializer:
                 # Pod might already be gone
                 print("[INFO] Pod already terminated")
             
-            # Step 2: Delete the PVC to completely wipe data
-            print("[INFO] Deleting PVC to wipe all Kafka data...")
+            # Step 2: Delete the PVC
+            print("[INFO] Deleting PVC...")
             try:
                 pvc = PersistentVolumeClaim.get(self.pvc_name, namespace=self.namespace)
                 pvc.delete()
@@ -118,15 +202,20 @@ class KafkaReinitializer:
             except Exception as e:
                 print(f"[WARNING] Could not delete PVC: {e}")
             
-            # Step 3: Scale StatefulSet back to 1 (this will create new PVC and reinitialize)
+            # Step 3: Clean the actual data directory on the node
+            if not self.clean_node_directory():
+                print("[ERROR] Failed to clean node directory")
+                return False
+            
+            # Step 4: Scale StatefulSet back to 1 (this will create new PVC and reinitialize)
             print("[INFO] Scaling StatefulSet back to 1 with fresh storage...")
             statefulset.patch({"spec": {"replicas": 1}})
             
-            # Step 4: Wait for new PVC to be created and bound
+            # Step 5: Wait for new PVC to be created and bound
             if not self.wait_for_pvc_bound(timeout=60):
                 return False
             
-            # Step 5: Wait for Kafka pod to be ready
+            # Step 6: Wait for Kafka pod to be ready
             if not self.wait_for_pod_ready(timeout=180):
                 return False
             
