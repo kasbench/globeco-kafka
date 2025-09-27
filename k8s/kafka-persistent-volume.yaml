@@ -3,7 +3,7 @@ kind: PersistentVolume
 metadata:
   name: execution-service-kafka-pv
   labels:
-    app: execution-service-kafka
+    app: globeco-execution-service-kafka
     type: local
 spec:
   capacity:

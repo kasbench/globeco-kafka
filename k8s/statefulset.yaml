@@ -15,7 +15,7 @@ spec:
     - metadata:
         name: kafka-data
         labels:
-          app: execution-service-kafka
+          app: globeco-execution-service-kafka
           type: local
       spec:
         accessModes: ["ReadWriteOnce"]
@@ -25,13 +25,15 @@ spec:
             storage: 10Gi
         selector:
           matchLabels:
-            app: execution-service-kafka
+            app: globeco-execution-service-kafka
             type: local
   template:
     metadata:
       labels:
         app: globeco-execution-service-kafka
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: node-3
       securityContext:
         fsGroup: 1000
       initContainers:
