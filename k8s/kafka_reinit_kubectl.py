@@ -147,9 +147,11 @@ spec:
 
 def reinitialize_kafka(namespace="globeco", 
                       statefulset_name="globeco-execution-service-kafka",
-                      node_name="node-3"):
+                      node_name="node-3",
+                      pv_name="execution-service-kafka-pv",
+                      pv_manifest_path="k8s/kafka-persistent-volume.yaml"):
     """
-    Reinitialize Kafka by scaling down, cleaning data, and scaling back up
+    Reinitialize Kafka by scaling down, cleaning data, resetting PV, and scaling back up
     
     Returns:
         bool: True if successful, False otherwise
@@ -157,6 +159,7 @@ def reinitialize_kafka(namespace="globeco",
     print("[INFO] Starting Kafka reinitialization for benchmark testing...")
     
     pod_name = f"{statefulset_name}-0"
+    pvc_name = f"kafka-data-{statefulset_name}-0"
     
     try:
         # Step 1: Scale StatefulSet to 0
@@ -171,11 +174,55 @@ def reinitialize_kafka(namespace="globeco",
         if not wait_for_pod_termination(pod_name, namespace):
             return False
         
-        # Step 2: Clean the data directory
+        # Step 2: Delete the PVC (this will put PV in Released state)
+        print("[INFO] Deleting PVC...")
+        success, stdout, stderr = run_kubectl(['kubectl', 'delete', 'pvc', pvc_name, '-n', namespace])
+        if not success:
+            print(f"[WARNING] Failed to delete PVC (might not exist): {stderr}")
+        
+        # Wait a moment for PVC deletion to complete
+        time.sleep(5)
+        
+        # Step 3: Delete the PV to reset its state
+        print("[INFO] Deleting PV to reset state...")
+        success, stdout, stderr = run_kubectl(['kubectl', 'delete', 'pv', pv_name])
+        if not success:
+            print(f"[WARNING] Failed to delete PV: {stderr}")
+        
+        # Wait for PV deletion
+        print("[INFO] Waiting for PV deletion...")
+        for _ in range(30):
+            success, stdout, stderr = run_kubectl(['kubectl', 'get', 'pv', pv_name])
+            if not success:
+                print("[SUCCESS] PV deleted")
+                break
+            time.sleep(1)
+        else:
+            print("[WARNING] PV deletion timeout, continuing anyway...")
+        
+        # Step 4: Clean the data directory
         if not clean_kafka_directory(namespace, node_name):
             return False
         
-        # Step 3: Scale StatefulSet back to 1
+        # Step 5: Recreate the PV
+        print("[INFO] Recreating PV...")
+        success, stdout, stderr = run_kubectl(['kubectl', 'apply', '-f', pv_manifest_path])
+        if not success:
+            print(f"[ERROR] Failed to recreate PV: {stderr}")
+            return False
+        
+        # Wait for PV to be available
+        print("[INFO] Waiting for PV to be available...")
+        for _ in range(30):
+            success, stdout, stderr = run_kubectl(['kubectl', 'get', 'pv', pv_name, '-o', 'jsonpath={.status.phase}'])
+            if success and stdout.strip() == 'Available':
+                print("[SUCCESS] PV is available")
+                break
+            time.sleep(1)
+        else:
+            print("[WARNING] PV availability timeout, continuing anyway...")
+        
+        # Step 6: Scale StatefulSet back to 1
         print("[INFO] Scaling StatefulSet back to 1...")
         success, stdout, stderr = run_kubectl(['kubectl', 'scale', 'statefulset', statefulset_name, 
                                              '--replicas=1', '-n', namespace])
@@ -183,12 +230,23 @@ def reinitialize_kafka(namespace="globeco",
             print(f"[ERROR] Failed to scale StatefulSet: {stderr}")
             return False
         
-        # Step 4: Wait for pod to be ready
+        # Step 7: Wait for pod to be ready
         if not wait_for_pod_ready(pod_name, namespace):
             return False
         
         print("[SUCCESS] Kafka reinitialization completed successfully!")
         print(f"[SUCCESS] Kafka is ready at: {statefulset_name}.{namespace}.svc.cluster.local:9092")
+        
+        # Show final status
+        print("\n[INFO] Final status:")
+        success, stdout, stderr = run_kubectl(['kubectl', 'get', 'pv', pv_name, '-o', 'wide'])
+        if success:
+            print(f"PV Status: {stdout}")
+        
+        success, stdout, stderr = run_kubectl(['kubectl', 'get', 'pvc', pvc_name, '-n', namespace, '-o', 'wide'])
+        if success:
+            print(f"PVC Status: {stdout}")
+        
         return True
         
     except Exception as e:
@@ -202,10 +260,13 @@ if __name__ == "__main__":
         print()
         print("This script reinitializes Kafka by:")
         print("1. Scaling the StatefulSet to 0 (stops Kafka)")
-        print("2. Cleaning the data directory on the node")
-        print("3. Scaling the StatefulSet back to 1 (fresh start)")
+        print("2. Deleting PVC and PV to reset state")
+        print("3. Cleaning the data directory on the node")
+        print("4. Recreating the PV")
+        print("5. Scaling the StatefulSet back to 1 (fresh start)")
         print()
         print("This ensures each benchmark test starts with a completely clean Kafka instance.")
+        print("The PV is deleted and recreated to avoid the 'Released' state issue.")
         sys.exit(0)
     
     success = reinitialize_kafka()
