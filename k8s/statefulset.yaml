@@ -161,21 +161,21 @@ spec:
           livenessProbe:
             tcpSocket:
               port: 9092
-            initialDelaySeconds: 60
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
             timeoutSeconds: 5
-            failureThreshold: 6
+            failureThreshold: 24
           readinessProbe:
             tcpSocket:
               port: 9092
-            initialDelaySeconds: 30
+            initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 6
+            failureThreshold: 24
           resources:
             requests:
               memory: "1Gi"
-              cpu: "500m"
+              cpu: "1000m"
             limits:
               memory: "2Gi"
               cpu: "1000m"
