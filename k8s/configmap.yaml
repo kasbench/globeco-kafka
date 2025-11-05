@@ -41,3 +41,4 @@ data:
     
     # Other settings
     group.initial.rebalance.delay.ms=0
+    auto.create.topics.enable=false
