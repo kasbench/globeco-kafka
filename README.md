@@ -1,0 +1,1 @@
+Scripts and configuration to create a Kafka cluster in Kubernetes for the GlobeCo application.
