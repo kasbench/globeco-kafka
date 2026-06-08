@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: execution-service-kafka-pvc
+  namespace: globeco
+  labels:
+    app: globeco-execution-service-kafka
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ebs-gp3
+  resources:
+    requests:
+      storage: 10Gi

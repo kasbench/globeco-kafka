@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-execution-service-kafka
+  namespace: globeco
+  labels:
+    app: globeco-execution-service-kafka
+spec:
+  type: ClusterIP
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+  selector:
+    app: globeco-execution-service-kafka

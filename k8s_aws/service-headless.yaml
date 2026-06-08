@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-execution-service-kafka-headless
+  namespace: globeco
+  labels:
+    app: globeco-execution-service-kafka
+spec:
+  clusterIP: None
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+    - name: controller
+      port: 9093
+      targetPort: 9093
+  selector:
+    app: globeco-execution-service-kafka

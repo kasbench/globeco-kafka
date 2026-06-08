@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: globeco-execution-service-kafka-config
+  namespace: globeco
+data:
+  server.properties: |
+    # KRaft mode configuration
+    process.roles=broker,controller
+    node.id=1
+    controller.quorum.voters=1@globeco-execution-service-kafka-0.globeco-execution-service-kafka-headless.globeco.svc.cluster.local:9093
+    
+    # Listeners
+    listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    advertised.listeners=PLAINTEXT://globeco-execution-service-kafka-0.globeco-execution-service-kafka-headless.globeco.svc.cluster.local:9092
+    listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+    controller.listener.names=CONTROLLER
+    inter.broker.listener.name=PLAINTEXT
+    
+    # Log directories
+    log.dirs=/opt/kafka/data
+    
+    # Cluster configuration
+    offsets.topic.replication.factor=1
+    transaction.state.log.replication.factor=1
+    transaction.state.log.min.isr=1
+    default.replication.factor=1
+    min.insync.replicas=1
+    
+    # Performance tuning
+    num.network.threads=3
+    num.io.threads=8
+    socket.send.buffer.bytes=102400
+    socket.receive.buffer.bytes=102400
+    socket.request.max.bytes=104857600
+    
+    # Log retention
+    log.retention.hours=168
+    log.segment.bytes=1073741824
+    log.retention.check.interval.ms=300000
+    
+    # Other settings
+    group.initial.rebalance.delay.ms=0
+    auto.create.topics.enable=false

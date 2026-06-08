@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: globeco-execution-service-kafka
+  namespace: globeco
+  labels:
+    app: globeco-execution-service-kafka
+spec:
+  serviceName: globeco-execution-service-kafka-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: globeco-execution-service-kafka
+
+  template:
+    metadata:
+      labels:
+        app: globeco-execution-service-kafka
+    spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: kafka-init
+          image: apache/kafka:4.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Initializing Kafka storage..."
+              echo "Running as user: $(id)"
+              echo "Data directory info:"
+              ls -la /opt/kafka/
+              
+              # Create data directory
+              mkdir -p /opt/kafka/data
+              
+              # Clean up filesystem artifacts that Kafka doesn't allow
+              echo "Cleaning up filesystem artifacts..."
+              if [ -d /opt/kafka/data/lost+found ]; then
+                echo "Removing lost+found directory..."
+                rm -rf /opt/kafka/data/lost+found
+              fi
+              
+              # Remove any other non-Kafka directories/files that might cause issues
+              find /opt/kafka/data -maxdepth 1 -type d -name "lost+found" -exec rm -rf {} + 2>/dev/null || true
+              
+              echo "Data directory contents after cleanup:"
+              ls -la /opt/kafka/data/
+              
+              # Check if already formatted
+              if [ ! -f /opt/kafka/data/meta.properties ]; then
+                echo "Formatting Kafka storage for KRaft mode..."
+                # Generate a consistent cluster ID (22 characters, base64url safe)
+                CLUSTER_ID=$(echo -n "globeco-kafka-cluster" | sha256sum | cut -c1-22)
+                echo "Using cluster ID: $CLUSTER_ID"
+                
+                # Copy config to a writable location and update the log.dirs path
+                cp /tmp/kafka-config/server.properties /tmp/server.properties
+                sed -i 's|log\.dirs=.*|log.dirs=/opt/kafka/data|g' /tmp/server.properties
+                
+                echo "Config file log.dirs setting:"
+                grep "log.dirs" /tmp/server.properties
+                
+                # Format the storage
+                /opt/kafka/bin/kafka-storage.sh format \
+                  --config /tmp/server.properties \
+                  --cluster-id $CLUSTER_ID \
+                  --ignore-formatted
+                
+                echo "Kafka storage formatted successfully"
+                ls -la /opt/kafka/data/
+                
+                # Verify meta.properties was created
+                if [ -f /opt/kafka/data/meta.properties ]; then
+                  echo "meta.properties created successfully:"
+                  cat /opt/kafka/data/meta.properties
+                else
+                  echo "ERROR: meta.properties not found after formatting"
+                  exit 1
+                fi
+              else
+                echo "Kafka storage already formatted, skipping..."
+                echo "Existing meta.properties:"
+                cat /opt/kafka/data/meta.properties
+                ls -la /opt/kafka/data/
+              fi
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /opt/kafka/data
+            - name: kafka-config
+              mountPath: /tmp/kafka-config
+      containers:
+        - name: kafka
+          image: apache/kafka:4.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 9092
+              name: kafka
+            - containerPort: 9093
+              name: controller
+          env:
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xmx1G -Xms1G"
+            - name: KAFKA_JVM_PERFORMANCE_OPTS
+              value: "-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35"
+            - name: KAFKA_OPTS
+              value: "-Dkafka.logs.dir=/opt/kafka/data"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /opt/kafka/data
+            - name: kafka-config
+              mountPath: /tmp/kafka-config
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting Kafka server..."
+              echo "Running as user: $(id)"
+              echo "Data directory permissions:"
+              ls -la /opt/kafka/data/
+              
+              # Ensure data directory is writable
+              if [ ! -w /opt/kafka/data ]; then
+                echo "ERROR: /opt/kafka/data is not writable"
+                exit 1
+              fi
+              
+              # Copy config to writable location
+              cp /tmp/kafka-config/server.properties /opt/kafka/config/server.properties
+              
+              # Start Kafka
+              exec /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "1000m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+      volumes:
+        - name: kafka-data
+          persistentVolumeClaim:
+            claimName: execution-service-kafka-pvc
+        - name: kafka-config
+          configMap:
+            name: globeco-execution-service-kafka-config
