@@ -1,5 +1,9 @@
+# Install manifests
 configmap.yaml
 service-headless.yaml
 service.yaml
 kafka-persistent-volume-claim.yaml
 statefulset.yaml
+
+# Pause to allow services to start
++45
