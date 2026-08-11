@@ -32,7 +32,7 @@ spec:
 
           # Reset offsets to earliest to register the group on the broker
           /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server globeco-execution-service-kafka:9092 \
-            --group fix-engine \
+            --group fix_engine \
             --topic orders \
             --reset-offsets --to-earliest \
             --execute
