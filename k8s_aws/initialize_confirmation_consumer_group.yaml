@@ -1,0 +1,40 @@
+{{- if eq .Values.autoscaler "keda" -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-kafka-consumer-group-confirmation-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: kafka-cli
+        image: apache/kafka:4.0.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Wait until Kafka is available
+          echo "Waiting for Kafka to be available..."
+          until /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server globeco-execution-service-kafka:9092 > /dev/null 2>&1; do
+            echo "Kafka not ready yet, retrying in 5s..."
+            sleep 5
+          done
+          echo "Kafka is available."
+
+          # Create the "fills" topic with 20 partitions and replication factor 1
+          echo "Creating topic 'fills'..."
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server globeco-execution-service-kafka:9092 \
+            --create --if-not-exists \
+            --topic fills \
+            --partitions 20 \
+            --replication-factor 1
+          echo "Topic 'fills' created."
+
+          # Reset offsets to earliest to register the group on the broker
+          /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server globeco-execution-service-kafka:9092 \
+            --group globeco-confirmation-service \
+            --topic fills \
+            --reset-offsets --to-earliest \
+            --execute
+      restartPolicy: OnFailure
+{{- end -}}

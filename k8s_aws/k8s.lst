@@ -7,3 +7,5 @@ statefulset.yaml
 
 # Pause to allow services to start
 +45
+initialize_confirmation_consumer_group.yaml
+initialize_fix_engine_consumer_group.yaml
