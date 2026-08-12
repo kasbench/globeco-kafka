@@ -13,6 +13,8 @@ spec:
         - /bin/bash
         - -c
         - |
+          set -e
+
           # Wait until Kafka is available
           echo "Waiting for Kafka to be available..."
           until /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server globeco-execution-service-kafka:9092 > /dev/null 2>&1; do
@@ -21,14 +23,18 @@ spec:
           done
           echo "Kafka is available."
 
-          # Create the "fills" topic with 20 partitions and replication factor 1
-          echo "Creating topic 'fills'..."
-          /opt/kafka/bin/kafka-topics.sh --bootstrap-server globeco-execution-service-kafka:9092 \
-            --create --if-not-exists \
-            --topic fills \
-            --partitions 20 \
-            --replication-factor 1
-          echo "Topic 'fills' created."
+          # Create the "fills" topic with 20 partitions and replication factor 1 (skip if it already exists)
+          if /opt/kafka/bin/kafka-topics.sh --bootstrap-server globeco-execution-service-kafka:9092 --describe --topic fills > /dev/null 2>&1; then
+            echo "Topic 'fills' already exists, skipping creation."
+          else
+            echo "Creating topic 'fills'..."
+            /opt/kafka/bin/kafka-topics.sh --bootstrap-server globeco-execution-service-kafka:9092 \
+              --create \
+              --topic fills \
+              --partitions 20 \
+              --replication-factor 1
+            echo "Topic 'fills' created."
+          fi
 
           # Reset offsets to earliest to register the group on the broker
           /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server globeco-execution-service-kafka:9092 \
