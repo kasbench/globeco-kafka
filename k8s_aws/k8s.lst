@@ -9,3 +9,4 @@ statefulset.yaml
 +45
 initialize_confirmation_consumer_group.yaml
 initialize_fix_engine_consumer_group.yaml
+wait_for_kafka.yaml
