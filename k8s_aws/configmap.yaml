@@ -3,6 +3,9 @@ kind: ConfigMap
 metadata:
   name: globeco-execution-service-kafka-config
   namespace: globeco
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "0"
 data:
   server.properties: |
     # KRaft mode configuration

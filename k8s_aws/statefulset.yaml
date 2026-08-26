@@ -5,6 +5,9 @@ metadata:
   namespace: globeco
   labels:
     app: globeco-execution-service-kafka
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "5"
 spec:
   serviceName: globeco-execution-service-kafka-headless
   replicas: 1

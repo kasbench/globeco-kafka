@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wait-for-kafka
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  template:
+    spec:
+      containers:
+      - name: kafka-wait
+        image: apache/kafka:4.0.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+
+          # Wait until Kafka is available
+          echo "Waiting for Kafka to be available..."
+          until /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server globeco-execution-service-kafka:9092 > /dev/null 2>&1; do
+            echo "Kafka not ready yet, retrying in 5s..."
+            sleep 5
+          done
+          echo "Kafka is available."
+
+          # Wait an additional 90 seconds for stability
+          echo "Waiting 90 seconds for Kafka to stabilize..."
+          sleep 90
+          echo "Done."
+      restartPolicy: OnFailure

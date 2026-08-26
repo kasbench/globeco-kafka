@@ -3,6 +3,10 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: init-kafka-consumer-group-fix-engine
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   template:
     spec:
